@@ -1,0 +1,20 @@
+# Frontend
+Branch-Frontend/node_modules/
+Branch-Frontend/dist/
+Branch-Frontend/build/
+Branch-Frontend/.env
+Branch-Frontend/.env.*
+
+# Backend
+Branch-Backend/target/
+Branch-Backend/.env
+Branch-Backend/.env.*
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

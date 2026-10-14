@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: BranchMaster
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/branch_master
+    username: root
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+server:
+  port: 8081

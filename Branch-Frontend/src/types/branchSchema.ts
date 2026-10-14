@@ -1,0 +1,34 @@
+export interface Branch {
+    id: number;
+    branchCode: string;
+    branchName: string;
+    communicationName: string | null;
+    organizationId: number; 
+    branchType: string; 
+    regionId: number; 
+    countryId: number;
+    stateId: number; 
+    cityId: number; 
+    area: string | null; 
+    zipCode: string | null;
+    address1: string; 
+    address2: string | null; 
+    latitude: number | null; 
+    longitude: number | null;
+    contactPerson: number | null; 
+    mobile: string | null; 
+    telephone: string | null;
+    email: string | null;
+    workingDays: string | null; 
+    workingHoursId: number | null; 
+    departmentIds: string | null;
+    serviceIds: string | null; 
+    status: boolean; 
+    branchLogo: string | null; 
+    documentPath: string | null;
+    remarks: string | null; 
+    createdBy: number | null; 
+    createdAt: string | null;
+    updatedBy: number | null; 
+    updatedAt: string | null;
+}
