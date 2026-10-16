@@ -30,11 +30,6 @@ public class BranchController {
     @Autowired
     private BranchService branchService;
 
-    @PostMapping("save")
-    public BranchResponseDto save(@Valid @RequestBody BranchRequestDto request) {
-        return branchService.save(request);
-    }
-
     @PostMapping("save-multiple")
     public List<BranchResponseDto> saveMultiple(
             @RequestBody @Valid List<@Valid BranchRequestDto> requests) {
