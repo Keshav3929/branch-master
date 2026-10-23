@@ -1,5 +1,6 @@
 package branchmaster.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Getter;
 import lombok.Setter;
 import java.math.BigDecimal;
@@ -40,7 +41,8 @@ public class BranchHistoryDto {
     private String documentPath;
     private String remarks;
     private Long createdBy;
+    @JsonFormat(pattern = "dd/MM/yyyy hh:mm a", locale = "en")
     private LocalDateTime createdAt;
     private Long updatedBy;
-    private LocalDateTime updatedAt;
-}
+    @JsonFormat(pattern = "dd/MM/yyyy hh:mm a", locale = "en")
+    private LocalDateTime updatedAt;}

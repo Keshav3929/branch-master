@@ -72,7 +72,7 @@ public class BranchRequestDto {
 
     private Long contactPerson;
 
-    @Pattern(regexp = "^[6-9][0-9]{9}$", message = "Mobile number must be 10 digits and start with 6, 7, 8, or 9")
+    @Pattern(regexp = "^([6-9][0-9]{9})?$", message = "Mobile number must be 10 digits and start with 6, 7, 8, or 9")
     private String mobile;
 
     @Size(max = 20, message = "Telephone must not exceed 20 characters")

@@ -1,30 +1,37 @@
 package branchmaster.service;
 
-import branchmaster.dto.*;
+import branchmaster.dto.BranchHistoryDto;
+import branchmaster.dto.BranchImportRowValidationDto;
+import branchmaster.dto.BranchRequestDto;
+import branchmaster.dto.BranchResponseDto;
+import branchmaster.dto.BranchSearchRequestDto;
 import branchmaster.entity.Branch;
 import branchmaster.exception.BranchException;
 import branchmaster.repository.BranchRepository;
 import branchmaster.repository.BranchSpecification;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
+@RequiredArgsConstructor
 @Service
 public class BranchService {
 
+    private static final Long CURRENT_USER = 1L;
     private final BranchRepository branchRepository;
     private final BranchHistoryService branchHistoryService;
-    private static final Long CURRENT_USER = 1L;
-
-    public BranchService(BranchRepository branchRepository, BranchHistoryService branchHistoryService) {
-        this.branchRepository = branchRepository;
-        this.branchHistoryService = branchHistoryService;
-    }
+    private final BranchExcelService branchExcelService; // batch validation only
+    private final EmailNotificationService emailNotificationService;
+    private final NotificationService notificationService;
 
     private Branch getBranch(Long id) {
         return branchRepository.findById(id)
@@ -38,6 +45,16 @@ public class BranchService {
 
     private BranchResponseDto toResponse(Branch branch) {
         return copy(branch, new BranchResponseDto());
+    }
+
+    public Map<String, Long> counts(BranchSearchRequestDto r) {
+        BranchSearchRequestDto scope = new BranchSearchRequestDto();
+        scope.setCreatedDateFrom(r.getCreatedDateFrom());
+        scope.setCreatedDateTo(r.getCreatedDateTo());
+        long total = branchRepository.count(BranchSpecification.search(scope));
+        scope.setStatus(true);
+        long active = branchRepository.count(BranchSpecification.search(scope));
+        return Map.of("total", total, "active", active, "inactive", total - active);
     }
 
     private void validateDuplicate(BranchRequestDto request, Long id) {
@@ -55,8 +72,18 @@ public class BranchService {
         if (nameExists) throw new BranchException(BranchException.Type.NAME_EXISTS);
     }
 
-    @Transactional
-    public BranchResponseDto save(BranchRequestDto request) {
+    private void notifyChange(Branch saved, String operation) {
+        BranchResponseDto details = toResponse(saved);
+        notificationService.record(operation, details);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                emailNotificationService.sendNotification(operation, details);
+            }
+        });
+    }
+
+    private BranchResponseDto saveOne(BranchRequestDto request) {
         validateDuplicate(request, null);
 
         Branch branch = copy(request, new Branch());
@@ -65,28 +92,27 @@ public class BranchService {
 
         Branch saved = branchRepository.save(branch);
         branchHistoryService.saveHistory(saved, "CREATE");
+        notifyChange(saved, "CREATE");
         return toResponse(saved);
     }
 
     @Transactional
     public List<BranchResponseDto> saveMultiple(List<BranchRequestDto> requests) {
-        if (requests == null || requests.isEmpty())
-            throw new IllegalArgumentException("At least one branch is required");
-
-        return requests.stream().map(this::save).toList();
+        BranchImportRowValidationDto result = branchExcelService.validateMultiple(requests);
+        if (!result.getInvalidRows().isEmpty())
+            throw new BranchException(result);
+        return requests.stream().map(this::saveOne).toList();
     }
 
     public Page<BranchResponseDto> getAll(Pageable pageable) {
         return branchRepository.findAll(pageable).map(this::toResponse);
     }
 
-    public BranchResponseDto getById(Long id) {
-        return toResponse(getBranch(id));
-    }
-
     @Transactional
     public BranchResponseDto update(BranchRequestDto request) {
         Branch branch = getBranch(request.getId());
+        boolean wasActive = branch.isStatus();
+
         validateDuplicate(request, request.getId());
         BeanUtils.copyProperties(request, branch);
 
@@ -96,6 +122,9 @@ public class BranchService {
 
         Branch saved = branchRepository.save(branch);
         branchHistoryService.saveHistory(saved, "UPDATE");
+
+        String operation = wasActive == saved.isStatus() ? "UPDATE" : saved.isStatus() ? "ACTIVATE" : "DEACTIVATE";
+        notifyChange(saved, operation);
         return toResponse(saved);
     }
 
@@ -109,6 +138,7 @@ public class BranchService {
 
         Branch saved = branchRepository.save(branch);
         branchHistoryService.saveHistory(saved, "DELETE");
+        notifyChange(saved, "DELETE");
         return "Branch deactivated successfully";
     }
 

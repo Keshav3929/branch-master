@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useEffect, useMemo, useState } from "react";
 import {
     Box, Button, Dialog, DialogActions, DialogContent, DialogTitle
@@ -7,11 +8,9 @@ import CancelIcon from "@mui/icons-material/Cancel";
 import type { MRT_ColumnDef } from "material-react-table";
 import DataTable from "../../components/Table";
 import { showError } from "../../components/SweetAlert";
-import { getBranchById, getBranchHistory } from "../branchApi";
-import { NA, nameOf } from "../branchUtils";
-import { formatDateTime } from "../dateUtils";
-import type { Branch } from "../../types/branchSchema";
-import { alignContent, alignItems } from "@mui/system";
+import { getBranchHistory } from "../branchApi";
+import type { Branch } from "../../types/BranchSchema";
+import { parseIdList } from "../branchUtils";
 
 export type BranchHistory = Partial<Branch> & {
     historyId: number;
@@ -39,14 +38,17 @@ type Props = {
 
 export const viewCols = [
     ["Branch Code", "branchCode"], ["Branch Name", "branchName"], ["Communication Name", "communicationName"], ["Organization", "organizationId"],
-    ["Type", "branchType"], ["Working Hours", "workingHoursId"], ["Region", "regionId"], ["Country", "countryId"], ["State", "stateId"],
+    ["Branch Type", "branchType"], ["Working Hours", "workingHoursId"], ["Region", "regionId"], ["Country", "countryId"], ["State", "stateId"],
     ["City", "cityId"], ["Area", "area"], ["Zip Code", "zipCode"], ["Latitude", "latitude"], ["Longitude", "longitude"],
-    ["Address Line 1", "address1"], ["Address Line 2", "address2"], ["Contact Person", "contactPerson"], ["Mobile", "mobile"],
-    ["Telephone", "telephone"], ["Email", "email"], ["Working Days", "workingDays"], ["Departments", "departmentIds"], ["Services", "serviceIds"],
-    ["Status", "status"], ["Branch Logo", "branchLogo"], ["Document Path", "documentPath"],
+    ["Address Line 1", "address1"], ["Address Line 2", "address2"], ["Contact Person", "contactPerson"], ["Mobile Number", "mobile"],
+    ["Telephone", "telephone"], ["Email ID", "email"], ["Working Days", "workingDays"], ["Departments", "departmentIds"], ["Services", "serviceIds"],
+    ["Status", "status"], ["Branch Logo", "branchLogo"], ["Supporting Documents", "documentPath"],
     ["Remarks", "remarks"], ["Created By", "createdBy"], ["Created On", "createdAt"], ["Updated By", "updatedBy"], ["Updated On", "updatedAt"]
 ] as const;
 
+const NA = "N/A";
+const nameOf = (options: Option[], id: number | null | undefined) =>
+    id == null ? NA : options.find(o => o.id === id)?.name ?? String(id);
 const lookup = { organizationId: "organizations", regionId: "regions", countryId: "countries", stateId: "states", cityId: "cities", contactPerson: "contactPersons", workingHoursId: "workingHours" } as const;
 const actionLabels: Record<string, string> = { CREATE: "Created", UPDATE: "Updated", DELETE: "Deleted" };
 const cellProps = { sx: { whiteSpace: "normal", wordBreak: "break-word" } };
@@ -58,13 +60,7 @@ const formatValue = (key: string, row: object, options: OptionsData): string => 
         return nameOf(options[lookup[key as keyof typeof lookup]], value as number | null);
     if (value == null || value === "") return NA;
     if (key === "status") return value ? "Active" : "Inactive";
-    if (key === "createdAt" || key === "updatedAt") return formatDateTime(String(value));
-    if (key === "departmentIds" || key === "serviceIds") {
-        try {
-            const parsed = typeof value === "string" ? JSON.parse(value) : value;
-            return Array.isArray(parsed) ? parsed.join(", ") : String(parsed);
-        } catch { return String(value); }
-    }
+    if (key === "departmentIds" || key === "serviceIds") return parseIdList(value).join(", ") || NA;
     return Array.isArray(value) ? value.join(", ") : String(value);
 };
 const StatusPill = ({ active }: { active: boolean }) => (
@@ -78,32 +74,36 @@ export default function BranchHistoryDialog({ branch, onClose, optionsData }: Pr
     const [history, setHistory] = useState<BranchHistory[]>([]);
     const [loading, setLoading] = useState(false);
     useEffect(() => {
-        if (!branch) {
-            setHistory([]);
-            return;
-        }
+        if (!branch) return;
+
         let cancelled = false;
-        setLoading(true);
-        Promise.all([getBranchById(branch.id), getBranchHistory(branch.id)]).then(([branchRes, historyRes]) => {
-            if (cancelled) return;
-            const current: Branch = branchRes.data;
-            const records: BranchHistory[] = historyRes.data?.length ? historyRes.data : [{ historyId: 0, branchId: current.id, action: "CREATE" } as BranchHistory];
-            setHistory(records.map(record => ({
-                ...current,
-                ...Object.fromEntries(Object.entries(record).filter(([, v]) => v != null)),
-                historyId: record.historyId,
-                branchId: record.branchId,
-                action: record.action || "CREATE",
-                updatedBy: record.updatedBy ?? record.createdBy ?? current.updatedBy ?? current.createdBy ?? null,
-                updatedAt: record.updatedAt ?? record.createdAt ?? current.updatedAt ?? current.createdAt ?? null
-            })));
-        })
-            .catch(() => { if (!cancelled) void showError("Error!", "Failed to load branch details and history."); })
-            .finally(() => { if (!cancelled) setLoading(false); });
-        return () => { cancelled = true; };
-    }, [branch?.id]);
+        const currentBranch = branch;
+
+        const timer = window.setTimeout(() => {
+            setLoading(true);
+            getBranchHistory(currentBranch.id).then(({ data }) => {
+                if (cancelled) return;
+                const records: BranchHistory[] = data?.length ? data : [{ historyId: 0, branchId: currentBranch.id, action: "CREATE" } as BranchHistory];
+                setHistory(records.map(record => ({
+                    ...currentBranch, ...Object.fromEntries(Object.entries(record).filter(([, v]) => v != null)),
+                    historyId: record.historyId, branchId: record.branchId, action: record.action || "CREATE",
+                    updatedBy: record.updatedBy ?? record.createdBy ?? currentBranch.updatedBy ?? currentBranch.createdBy ?? null,
+                    updatedAt: record.updatedAt ?? record.createdAt ?? currentBranch.updatedAt ?? currentBranch.createdAt ?? null
+                })));
+            })
+                .catch(() => {
+                    if (!cancelled) { void showError("Error!", "Failed to load branch history."); }
+                })
+                .finally(() => { if (!cancelled) setLoading(false); });
+        }, 0);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [branch]);
     const columns = useMemo<MRT_ColumnDef<BranchHistory>[]>(() => [
-        { id: "updatedAt", header: "Updated On", accessorFn: h => formatDateTime(h.updatedAt), enableSorting: false },
+        { id: "updatedAt", header: "Updated On", accessorFn: h => h.updatedAt ?? NA, enableSorting: false },
         { id: "updatedBy", header: "Updated By", accessorFn: h => h.updatedBy ?? NA, enableSorting: false },
         { id: "action", header: "Action", enableSorting: false, accessorFn: h => actionLabels[h.action?.toUpperCase()] ?? h.action ?? NA },
         ...viewCols.filter(([, key]) => key !== "updatedAt" && key !== "updatedBy")

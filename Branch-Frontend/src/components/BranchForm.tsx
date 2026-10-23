@@ -10,38 +10,18 @@ import TextArea from "./TextArea";
 import Attachment from "./Attachment";
 import MultiSelectAutoComplete from "./MultiSelectAutoComplete";
 import { showError } from "./SweetAlert";
-import { joinCsv, pickId, splitCsv } from "../app/branchUtils";
-
-export interface OptionItem { id: number | string; name: string }
-export interface OptionsData {
-    organizations: OptionItem[]; branchTypes: string[]; regions: OptionItem[]; countries: OptionItem[];
-    states: OptionItem[]; cities: OptionItem[]; contactPersons: OptionItem[]; workingHours: OptionItem[];
-}
-
-export const initialForm = {
-    branchCode: "", branchName: "", communicationName: "", branchType: "",
-    organizationId: null as number | null, regionId: null as number | null, countryId: null as number | null,
-    stateId: null as number | null, cityId: null as number | null,
-    area: "", zipCode: "", address1: "", address2: "", latitude: "", longitude: "",
-    contactPerson: "", mobile: "", telephone: "", email: "",
-    workingDays: "", workingHoursId: "", departmentIds: "", serviceIds: "",
-    status: true, branchLogo: "", documentPath: "", remarks: ""
-};
-
-export const gridStyle = { display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" }, gap: 2 };
-
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+import { splitCsv, joinCsv, pickId, gridStyle, type OptionItem, type OptionsData} from "../app/branchUtils";
 
 // kinds: text | num (numeric id) | str (id kept as string) | pick (plain string) | multi (comma-separated) | status
 type Kind = "text" | "num" | "str" | "pick" | "multi" | "status";
 type Field = readonly [kind: Kind, key: string, label: string, source?: keyof OptionsData | string[]];
 
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const SECTIONS: { title: string; sub: string; icon: ReactNode; pre?: Field; fields: Field[] }[] = [
     {
         title: "General Details", sub: "Branch identity and organization", icon: <BusinessIcon />, fields: [
             ["text", "branchCode", "Branch Code*"], ["text", "branchName", "Branch Name*"], ["text", "communicationName", "Communication Name"],
-            ["num", "organizationId", "Organization*", "organizations"], ["pick", "branchType", "Branch Type*", "branchTypes"],
-            ["str", "workingHoursId", "Working Hours", "workingHours"]]
+            ["num", "organizationId", "Organization*", "organizations"], ["pick", "branchType", "Branch Type*", "branchTypes"]]
     },
     {
         title: "Location & Address", sub: "Geographical details and branch address", icon: <LocationIcon />, fields: [
@@ -58,6 +38,7 @@ const SECTIONS: { title: string; sub: string; icon: ReactNode; pre?: Field; fiel
     {
         title: "Operations & Services", sub: "Working schedule, departments and status", icon: <SettingsIcon />,
         pre: ["multi", "workingDays", "Select Working Days", DAYS], fields: [
+            ["str", "workingHoursId", "Working Hours", "workingHours"],
             ["multi", "departmentIds", "Departments", ["HR", "Finance", "IT", "Sales"]],
             ["multi", "serviceIds", "Services", ["OPD", "Emergency", "Pharmacy", "Laboratory"]],
             ["status", "status", "Status*"]]
@@ -71,9 +52,9 @@ const ATTACHMENTS = [
 
 interface Props {
     data: object;                                           // current form values
-    set: (patch: Record<string, unknown>) => void;          // writes values (and validates)
+    set: (patch: Record<string, unknown>) => void;          // writes values
     errOf: (name: string) => string | undefined;
-    onBlur: (e: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+    onBlur?: (e: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
     optionsData: OptionsData;
     prefix?: string;                                        // "branches.0." in the batch form
     stars?: boolean;                                        // false: only Status keeps its "*" (edit form)
@@ -113,15 +94,15 @@ export default function BranchFormFields({ data, set, errOf, onBlur, optionsData
         }
     };
 
-    const attach = (key: "branchLogo" | "documentPath", max: number, e: ChangeEvent<HTMLInputElement>) => {
+    const attach = async (key: "branchLogo" | "documentPath", max: number, e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         if (file.size > max * 1024 * 1024) {
-            void showError("File Too Large", `File size must not exceed ${max} MB.`);
-            e.target.value = "";
-            return;
+            await showError("File Too Large", `File size must not exceed ${max} MB.`);
+        } else {
+            set({ [key]: file.name });
         }
-        set({ [key]: file.name });
+        e.target.value = "";
     };
 
     const card = (n: number, title: string, sub: string, icon: ReactNode, body: ReactNode) => (

@@ -6,22 +6,19 @@ import branchmaster.entity.BranchHistory;
 import branchmaster.exception.BranchException;
 import branchmaster.repository.BranchHistoryRepository;
 import branchmaster.repository.BranchRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+@RequiredArgsConstructor
 @Service
 public class BranchHistoryService {
 
     private final BranchHistoryRepository historyRepository;
     private final BranchRepository branchRepository;
-
-    public BranchHistoryService(BranchHistoryRepository historyRepository, BranchRepository branchRepository) {
-        this.historyRepository = historyRepository;
-        this.branchRepository = branchRepository;
-    }
 
     @Transactional
     public void saveHistory(Branch current, String action) {

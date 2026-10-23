@@ -2,23 +2,18 @@ import * as yup from "yup";
 
 const requiredNumber = (label: string) =>
     yup.number()
+        .transform((value, original) => original === "" || original == null ? null : value)
         .nullable()
         .defined()
         .typeError(`${label} is mandatory`)
-        .test("required", `${label} is mandatory`, (value) => value !== null);
-        
-const optionalCoordinate = (label: string, limit: number) =>
-    yup.string()
-        .defined()
-        .test("coordinate", `${label} must be a number`, (v) => !v || !Number.isNaN(Number(v)))
-        .test("range", `${label} must be between -${limit} and ${limit}`, (v) =>
-            !v || (Number(v) >= -limit && Number(v) <= limit)
-        );
+        .test("required", `${label} is mandatory`, value => value !== null);
 
-const digitsOnly = (label: string) => ({
-    message: `${label} must contain only numbers`,
-    excludeEmptyString: true
-});
+const optionalCoordinate = (label: string, limit: number) =>
+    yup.string().trim().defined()
+        .test("number", `${label} must be a number`,
+            v => !v || Number.isFinite(Number(v)))
+        .test("range", `${label} must be between -${limit} and ${limit}`,
+            v => !v || (Number.isFinite(Number(v)) && Number(v) >= -limit && Number(v) <= limit));
 
 const branchSchema = yup.object({
     branchCode: yup.string().trim().required("Branch code is mandatory")
@@ -47,9 +42,8 @@ const branchSchema = yup.object({
 
     area: yup.string().trim().defined().max(150, "Area must not exceed 150 characters"),
 
-    zipCode: yup.string().trim().defined()
-        .max(10, "Zip code must not exceed 10 characters")
-        .matches(/^[0-9]*$/, digitsOnly("Zip code")),
+    zipCode: yup.string().trim().defined().max(10, "Zip code must not exceed 10 characters")
+        .matches(/^[0-9]*$/, { message: "Zip code must contain only numbers", excludeEmptyString: true }),
 
     address1: yup.string().trim().required("Address is mandatory")
         .max(500, "Address must not exceed 500 characters"),
@@ -66,16 +60,15 @@ const branchSchema = yup.object({
             excludeEmptyString: true
         }),
 
-    telephone: yup.string().trim().defined()
-        .max(20, "Telephone must not exceed 20 characters")
-        .matches(/^[0-9]*$/, digitsOnly("Telephone")),
+    telephone: yup.string().trim().defined().max(20, "Telephone must not exceed 20 characters")
+        .matches(/^[0-9]*$/, { message: "Telephone must contain only numbers", excludeEmptyString: true }),
 
     email: yup.string().trim().defined()
         .max(150, "Email must not exceed 150 characters")
         .email("Please provide a valid email address"),
 
     workingDays: yup.string().defined(),
-    workingHoursId: yup.string().defined(),
+    workingHoursId: yup.string().defined().nullable(),
     departmentIds: yup.string().defined(),
     serviceIds: yup.string().defined(),
     status: yup.boolean().defined(),

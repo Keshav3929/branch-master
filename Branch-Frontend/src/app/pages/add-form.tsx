@@ -5,17 +5,16 @@ import SaveIcon from "@mui/icons-material/Save";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import * as yup from "yup";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import type { Resolver } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import Drawer from "../../components/Drawer";
 import { showSuccess, showError } from "../../components/SweetAlert";
 import branchSchema from "../branch-validation";
-import { saveBranches } from "../branchApi";
-import { getErrorMessage, toPayload } from "../branchUtils";
-import BranchFormFields, { initialForm } from "../../components/branch-form";
-import type { OptionsData } from "../../components/branch-form";
-import { Branch } from "../../types/branchSchema";
+import { saveBranches, parseApiError } from "../branchApi";
+import BranchFormFields from "../../components/BranchForm";
+import { initialForm, OptionsData, toPayload } from "../branchUtils";
+import type { Branch } from "../../types/BranchSchema";
 
 interface AddFormProps { open: boolean; onClose: () => void; onSuccess: (branches: Branch[]) => void; optionsData: OptionsData }
 
@@ -27,31 +26,47 @@ const batchSchema = yup.object({
 });
 
 export default function AddForm({ open, onClose, onSuccess, optionsData }: AddFormProps) {
-    const { control, setValue, trigger, handleSubmit, reset, watch, formState: { errors, isSubmitting } } =
+    const { control, setValue, setError, clearErrors, trigger, handleSubmit, reset, formState: { errors, isSubmitting } } =
         useForm<BatchValues>({
             defaultValues: { branches: [{ ...initialForm }] },
-            resolver: yupResolver(batchSchema) as Resolver<BatchValues>,
+            resolver: yupResolver(batchSchema) as unknown as Resolver<BatchValues>,
             mode: "onBlur"
         });
-    const { fields, append, remove } = useFieldArray({ control, name: "branches" });
-    const branches = watch("branches");
+    const { fields, append, remove, replace } = useFieldArray({ control, name: "branches" });
+    const branches = useWatch({ control, name: "branches" }) ?? [];
+
     const set = (i: number) => (patch: Record<string, unknown>) =>
-        Object.entries(patch).forEach(([k, v]) => setValue(`branches.${i}.${k}` as never, v as never, { shouldDirty: true, shouldValidate: true }));
+        Object.entries(patch).forEach(([k, v]) =>
+            setValue(`branches.${i}.${k}` as never, v as never, { shouldDirty: true, shouldValidate: true }));
     const errOf = (i: number) => (name: string) => (errors.branches?.[i] as unknown as Record<string, { message?: string }> | undefined)?.[name]?.message;
-    const handleReset = () => reset({ branches: [{ ...initialForm }] });
+    const handleReset = () => {
+        replace([{ ...initialForm }]);
+        reset({ branches: [{ ...initialForm }] });
+    };
     const closeForm = () => { handleReset(); onClose(); };
+
+    // handleSubmit runs the yup schema first; the API is only called when every branch is valid.
     const handleSave = handleSubmit(async ({ branches: values }) => {
+        clearErrors();
         try {
             const res = await saveBranches(values.map(toPayload));
             handleReset();
             onClose();
             onSuccess(res.data);
-            await showSuccess("Success!", res.data?.message || `${values.length} branches created successfully.`);
+            await showSuccess("Success!", `${values.length} branches created successfully.`);
         } catch (err: unknown) {
-            await showError("Error!", getErrorMessage(err, "Failed to create branches."));
+            const { message, invalidRows } = parseApiError(err);
+            if (invalidRows?.length) {
+                invalidRows.forEach(r => r.errors.forEach(e => {
+                    const [field, ...rest] = e.split(":");
+                    setError(`branches.${r.row - 2}.${field.trim()}` as never, { message: rest.join(":").trim() });
+                }));
+                await showError("Fix the highlighted fields", `${invalidRows.length} branch(es) have errors.`);
+            } else {
+                await showError("Error!", message ?? "Failed to create branches.");
+            }
         }
     });
-
 
     return (
         <Drawer
@@ -67,7 +82,7 @@ export default function AddForm({ open, onClose, onSuccess, optionsData }: AddFo
                         </Box>
                     </Stack>
                     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mt: 1.5 }}>
-                        {["General details", "Location", "Operations","Documents"].map(label => (
+                        {["General details", "Location", "Operations", "Documents"].map(label => (
                             <Chip key={label} size="small" label={label} sx={{ bgcolor: "rgba(255,255,255,.16)", color: "#fff", border: "1px solid rgba(255,255,255,.3)" }} />
                         ))}
                     </Stack>

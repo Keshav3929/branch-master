@@ -10,9 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@amcharts/amcharts5": "^5.21.3",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
-    "@hookform/resolvers": "^5.9.1",
+    "@hookform/resolvers": "^5.9.2",
     "@mui/icons-material": "^7.3.11",
     "@mui/material": "^7.3.11",
     "@mui/system": "^7.3.11",
@@ -27,6 +28,8 @@
     "react-redux": "^9.3.0",
     "react-router-dom": "^7.18.4",
     "sweetalert2": "^11.26.25",
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0",
     "yup": "^1.7.1"
   },
   "devDependencies": {

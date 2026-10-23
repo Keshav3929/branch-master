@@ -3,15 +3,20 @@ import type { KeyboardEvent } from "react";
 import { Box, Button, Paper, Card, CardContent, Typography, Stack, Tooltip, IconButton, Collapse } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import FilterListIcon from "@mui/icons-material/FilterList";
-import CloseIcon from "@mui/icons-material/Close";
 import ResetIcon from "@mui/icons-material/RestartAlt";
 import TuneIcon from "@mui/icons-material/Tune";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import type { Dayjs } from "dayjs";
-import { today, parseDate, formatDate } from "../dateUtils";
+import dayjs, { type Dayjs } from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
 import MultiSelectAutoComplete from "../../components/MultiSelectAutoComplete";
+
+dayjs.extend(customParseFormat);
+export const DATE_FMT = "DD-MM-YYYY";
+const today = () => dayjs().startOf("day");
+const parseDate = (v: string): Dayjs | null => { const d = dayjs(v, DATE_FMT, true); return v && d.isValid() ? d.startOf("day") : null; };
+const formatDate = (d: Dayjs) => d.format(DATE_FMT);
 
 export interface BranchFilters {
     search: string; createdDateFrom: string; createdDateTo: string;
@@ -50,38 +55,31 @@ const pickerErrors: Record<string, string> = {
 export default function SearchForm({ filters, setFilters, onApply, onReset, showMoreFilters, setShowMoreFilters, optionsData, renderChips, renderBelowFilters
 }: SearchFormProps) {
     const [errors, setErrors] = useState<Record<DateKey, string>>({ createdDateFrom: "", createdDateTo: "" });
-    const [searchFocused, setSearchFocused] = useState(false);
     const set = (patch: Partial<BranchFilters>) => setFilters(prev => ({ ...prev, ...patch }));
     const setError = (field: DateKey, msg: string) => setErrors(prev => ({ ...prev, [field]: msg }));
     const fromDate = parseDate(filters.createdDateFrom);
     const toDate = parseDate(filters.createdDateTo);
     const dates: Record<DateKey, Dayjs | null> = { createdDateFrom: fromDate, createdDateTo: toDate };
-    const rangeError = (field: DateKey, date: Dayjs) => {
-        if (date.isAfter(today(), "day")) return "Future dates are not allowed";
+    const validateDate = (field: DateKey, date: Dayjs | null) => {
+        if (!date) return "";
+        if (!date.isValid()) return pickerErrors.invalidDate;
+        if (date.isAfter(today(), "day")) return pickerErrors.maxDate;
         if (field === "createdDateFrom" && toDate && date.isAfter(toDate, "day"))
             return "From date cannot be after To date";
         if (field === "createdDateTo" && fromDate && date.isBefore(fromDate, "day"))
-            return "To date cannot be before From date";
+            return pickerErrors.minDate;
         return "";
     };
     const updateDate = (field: DateKey, date: Dayjs | null) => {
-        if (!date) {
-            set({ [field]: "" });
-            return setError(field, "");
-        }
-        const selected = date.startOf("day");
-        if (!selected.isValid()) return setError(field, "Enter a valid date");
-        const err = rangeError(field, selected);
-        if (err) return setError(field, err);
-        set({ [field]: formatDate(selected) });
+        const error = validateDate(field, date);
+        if (error) return setError(field, error);
+        set({ [field]: date ? formatDate(date.startOf("day")) : "" });
         setError(field, "");
     };
     const validateTypedDate = (field: DateKey, value: string) => {
         if ((value.match(/\//g) || []).length > 2)
             return setError(field, "A date cannot contain more than 2 slashes");
-        if (!value) return setError(field, "");
-        const date = parseDate(value);
-        setError(field, date ? rangeError(field, date) : pickerErrors.invalidDate);
+        setError(field, value ? validateDate(field, parseDate(value)) : "");
     };
     const dateKeyDown = (event: KeyboardEvent) => {
         if (event.ctrlKey || event.metaKey || event.altKey ||
@@ -89,26 +87,15 @@ export default function SearchForm({ filters, setFilters, onApply, onReset, show
         if (!/^[0-9/-]$/.test(event.key)) event.preventDefault();
     };
     const datePicker = (field: DateKey, label: string) => (
-        <DatePicker
-            label={label}
-            value={dates[field]}
-            format="DD-MM-YYYY"
-            views={["year", "month", "day"]}
-            openTo="day"
-            maxDate={today()}
-            minDate={field === "createdDateTo" ? fromDate ?? undefined : undefined}
+        <DatePicker label={label} value={dates[field]} format="DD-MM-YYYY" views={["year", "month", "day"]} openTo="day" maxDate={today()} minDate={field === "createdDateTo" ? fromDate ?? undefined : undefined}
             onChange={date => updateDate(field, date)}
             onError={reason => {
                 if (!reason) setError(field, "");
                 else if (pickerErrors[reason]) setError(field, pickerErrors[reason]);
             }}
             slotProps={{
-                actionBar: { actions: ["today"], sx: { m: 0, p: 0.5 } },
-                popper: { sx: popperSx },
-                textField: {
-                    size: "small", fullWidth: true, error: !!errors[field], helperText: errors[field], onKeyDown: dateKeyDown,
-                    onBlur: event => validateTypedDate(field, event.currentTarget.querySelector("input")?.value ?? "")
-                },
+                actionBar: { actions: ["today"], sx: { m: 0, p: 0.5 } }, popper: { sx: popperSx },
+                textField: { size: "small", fullWidth: true, error: !!errors[field], helperText: errors[field], onKeyDown: dateKeyDown, onBlur: event => validateTypedDate(field, event.currentTarget.querySelector("input")?.value ?? "") },
                 day: ownerState => ({ sx: { opacity: ownerState.day.isAfter(today(), "day") ? 0.4 : 1 } })
             }}
         />
@@ -132,10 +119,7 @@ export default function SearchForm({ filters, setFilters, onApply, onReset, show
     selects.forEach(({ key, label, options }) =>
         (filters[key] as (string | number)[]).forEach(value => {
             const match = options.find(o => optId(o) === String(value));
-            chips.push({
-                key, value,
-                label: `${label}: ${match && typeof match === "object" ? match.name : value}`
-            });
+            chips.push({ key, value, label: `${label}: ${match && typeof match === "object" ? match.name : value}` });
         })
     );
 
@@ -155,20 +139,23 @@ export default function SearchForm({ filters, setFilters, onApply, onReset, show
                     <Card variant="outlined" sx={{ borderRadius: 3, borderColor: "divider", minWidth: 0 }}>
                         <CardContent sx={{ p: { xs: 1.5, sm: 2.5 }, "&:last-child": { pb: 2.5 } }}>
                             <Box sx={{ mb: 2 }}>
-                                <MultiSelectAutoComplete label="Search Branch Code / Name" placeholder="Type branch code or select branch name..."
-                                    options={[]} value={filters.search} disableSuggestions inputValue={filters.search}
-                                    onInputChange={text => set({ search: text })} freeSolo disableClearable
+                                <MultiSelectAutoComplete
+                                    label="Search Branch Code / Name"
+                                    placeholder="Type branch code or select branch name..."
+                                    options={[]}
+                                    value={filters.search}
+                                    disableSuggestions
+                                    inputValue={filters.search}
+                                    onInputChange={text => set({ search: text })}
+                                    freeSolo
+                                    disableClearable
                                     endAdornment={
-                                        <Tooltip title={searchFocused && filters.search ? "Clear search" : "Search"}>
-                                            <IconButton size="small" onClick={() => { if (searchFocused && filters.search) set({ search: "" }); }}>
-                                                {searchFocused && filters.search
-                                                    ? <CloseIcon sx={{ color: "#000" }} />
-                                                    : <SearchIcon sx={{ color: "#fff", bgcolor: "#0f172a", width: 32, height: 32, borderRadius: "50%", p: 0.75 }} />}
+                                        <Tooltip title="Search">
+                                            <IconButton size="small" onClick={() => onApply(filters)}>
+                                                <SearchIcon sx={{ color: "#fff", bgcolor: "#0f172a", width: 32, height: 32, borderRadius: "50%", p: 0.75 }} />
                                             </IconButton>
                                         </Tooltip>
                                     }
-                                    onFocus={() => setSearchFocused(true)}
-                                    onBlur={() => setSearchFocused(false)}
                                     onChange={val => set({ search: val == null ? "" : Array.isArray(val) ? filters.search : typeof val === "object" ? val.name : String(val) })}
                                     onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); onApply(filters); (e.target as HTMLElement).blur(); } }}
                                 />
@@ -203,11 +190,7 @@ export default function SearchForm({ filters, setFilters, onApply, onReset, show
                 </Box>
             </Paper>
 
-            <Box sx={{
-                display: "grid",
-                gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1.5fr) minmax(0, 1fr)" },
-                gap: 2, mt: 1, mb: 2
-            }}>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1.5fr) minmax(0, 1fr)" }, gap: 2, mt: 1, mb: 2 }}>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}
                     justifyContent="center" alignItems={{ xs: "stretch", sm: "center" }}>
                     <Button variant="contained" startIcon={<SearchIcon />} onClick={() => onApply(filters)} sx={{ bgcolor: "#17324d", "&:hover": { bgcolor: "#0f2032" } }}> Apply Filters </Button>

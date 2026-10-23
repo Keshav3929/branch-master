@@ -5,11 +5,10 @@ import { MaterialReactTable, useMaterialReactTable } from "material-react-table"
 import type { OnChangeFn } from "@tanstack/react-table";
 import type { MRT_ColumnDef, MRT_PaginationState, MRT_SortingState, MRT_TableOptions } from "material-react-table";
 
-export interface ServerSideProps<TData extends object> {
+export interface ServerSideProps {
     rowCount: number;
     pagination: MRT_PaginationState;
     sorting: MRT_SortingState;
-    loading: boolean;
     onPaginationChange: OnChangeFn<MRT_PaginationState>;
     onSortingChange: OnChangeFn<MRT_SortingState>;
 }
@@ -17,6 +16,8 @@ export interface ServerSideProps<TData extends object> {
 interface DataTableProps<TData extends object> {
     data: TData[];
     columns: MRT_ColumnDef<TData>[];
+    pageSize?: number;
+    loading?: boolean;
     getRowId?: (row: TData) => string;
     renderRowActions?: (row: TData) => ReactNode;
     renderTopToolbarCustomActions?: MRT_TableOptions<TData>["renderTopToolbarCustomActions"];
@@ -25,7 +26,7 @@ interface DataTableProps<TData extends object> {
     enableRowActions?: boolean;
     enablePagination?: boolean;
     maxHeight?: number;
-    serverSide?: ServerSideProps<TData>;
+    serverSide?: ServerSideProps;
 }
 const isBlank = (v: unknown) => v == null || (typeof v === "string" && !v.trim());
 const headCellSx = {
@@ -76,9 +77,11 @@ function TruncatedCell({ title, width, children }: { title: string; width: numbe
 }
 
 function DataTable<TData extends object>({
-    data, columns, getRowId, renderRowActions, renderTopToolbarCustomActions,
-    title, emptyMessage = "No records found", enableRowActions = false,
-    enablePagination = true, maxHeight = 500, serverSide
+    data, columns, loading = false, getRowId, renderRowActions,
+    renderTopToolbarCustomActions, title,
+    emptyMessage = "No records found",
+    enableRowActions = false, enablePagination = true,
+    maxHeight = 500, serverSide
 }: DataTableProps<TData>) {
     const [searchFocused, setSearchFocused] = useState(false);
     const [globalFilter, setGlobalFilter] = useState("");
@@ -118,11 +121,8 @@ function DataTable<TData extends object>({
         initialState: { showGlobalFilter: true, pagination: { pageIndex: 0, pageSize: 20 }, sorting: [] },
         state: {
             globalFilter,
-            ...(serverSide && {
-                pagination: serverSide.pagination,
-                sorting: serverSide.sorting,
-                isLoading: serverSide.loading
-            })
+            isLoading: loading,
+            ...(serverSide && { pagination: serverSide.pagination, sorting: serverSide.sorting })
         },
         muiSearchTextFieldProps: {
             onFocus: () => setSearchFocused(true),

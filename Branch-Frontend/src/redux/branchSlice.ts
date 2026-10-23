@@ -1,6 +1,6 @@
 import { createAsyncThunk, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import { searchBranches, getBranches } from "../app/branchApi";
-import type { Branch } from "../types/branchSchema";
+import type { Branch } from "../types/BranchSchema";
 import type { BranchQuery, BranchSearchRequest } from "../app/branchApi";
 
 interface BranchState {
@@ -15,7 +15,7 @@ const initialState: BranchState = {
 };
 
 export const hasFilters = (f: BranchSearchRequest) =>
-    Object.entries(f).some(([key, value]) => {
+    Object.entries(f).some(([, value]) => {
         if (value == null || value === "") return false;
         if (Array.isArray(value)) return value.length > 0;
         return true;
@@ -23,15 +23,11 @@ export const hasFilters = (f: BranchSearchRequest) =>
 
 export const fetchBranches = createAsyncThunk(
     "branch/fetchBranches",
-    async ({ filters, page }: { filters: BranchSearchRequest; page: BranchQuery }) => {
+    async ({ filters, page }: { filters: BranchSearchRequest; page: BranchQuery }, { signal }) => {
         const { data } = hasFilters(filters)
-            ? await searchBranches(filters, page)
-            : await getBranches(page);
-
-        return {
-            content: data?.content ?? [],
-            totalElements: data?.totalElements ?? 0
-        };
+            ? await searchBranches(filters, page, signal)
+            : await getBranches(page, signal);
+        return { content: data?.content ?? [], totalElements: data?.totalElements ?? 0 };
     }
 );
 const branchSlice = createSlice({
@@ -64,6 +60,7 @@ const branchSlice = createSlice({
             state.totalElements = action.payload.totalElements;
         })
         .addCase(fetchBranches.rejected, (state, action) => {
+            if (action.meta.aborted) return;
             state.loading = false;
             state.error = action.error.message || "Failed to load branches";
         })
