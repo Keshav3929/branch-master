@@ -43,14 +43,14 @@ export default function BranchHeader() {
             setNotifs(items => items.map(item => item.id === notification.id ? { ...item, seen: true } : item));
             setDetail(current => current?.id === notification.id ? { ...current, seen: true } : current);
             setUnread(count => Math.max(0, count - 1));
-        } catch { }
+        } catch {/*  */ }
     };
     const markAll = async () => {
         try {
             await markAllNotificationsSeen();
             setNotifs(items => items.map(item => ({ ...item, seen: true })));
             setUnread(0);
-        } catch { }
+        } catch {/* */ }
     };
     const closePopover = () => {
         if (!detail) setAnchorEl(null);

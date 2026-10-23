@@ -33,11 +33,6 @@ export const parseApiError = (err: unknown) => {
     };
 };
 
-interface PayloadSource {
-    workingHoursId: string; contactPerson: string; mobile: string | null;
-    latitude: string; longitude: string; departmentIds: string; serviceIds: string;
-}
-
 export const toPayload = <T extends Record<string, unknown>>(f: T) => ({
     ...f,
     ...Object.fromEntries(["workingHoursId", "contactPerson", "latitude", "longitude"]
