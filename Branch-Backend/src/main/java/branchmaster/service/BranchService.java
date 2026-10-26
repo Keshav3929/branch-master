@@ -1,5 +1,6 @@
 package branchmaster.service;
 
+import branchmaster.dto.BranchAnalyticsDto;
 import branchmaster.dto.BranchHistoryDto;
 import branchmaster.dto.BranchImportRowValidationDto;
 import branchmaster.dto.BranchRequestDto;
@@ -34,8 +35,7 @@ public class BranchService {
     private final NotificationService notificationService;
 
     private Branch getBranch(Long id) {
-        return branchRepository.findById(id)
-                .orElseThrow(() -> new BranchException(BranchException.Type.NOT_FOUND));
+        return branchRepository.findById(id).orElseThrow(() -> new BranchException(BranchException.Type.NOT_FOUND));
     }
 
     private <T> T copy(Object source, T target) {
@@ -58,16 +58,10 @@ public class BranchService {
     }
 
     private void validateDuplicate(BranchRequestDto request, Long id) {
-        boolean codeExists = id == null
-                ? branchRepository.existsByBranchCode(request.getBranchCode())
-                : branchRepository.existsByBranchCodeAndIdNot(request.getBranchCode(), id);
-
+        boolean codeExists = id == null ? branchRepository.existsByBranchCode(request.getBranchCode()) : branchRepository.existsByBranchCodeAndIdNot(request.getBranchCode(), id);
         boolean nameExists = id == null
-                ? branchRepository.existsByBranchNameAndOrganizationId(
-                request.getBranchName(), request.getOrganizationId())
-                : branchRepository.existsByBranchNameAndOrganizationIdAndIdNot(
-                request.getBranchName(), request.getOrganizationId(), id);
-
+                ? branchRepository.existsByBranchNameAndOrganizationId(request.getBranchName(), request.getOrganizationId())
+                : branchRepository.existsByBranchNameAndOrganizationIdAndIdNot(request.getBranchName(), request.getOrganizationId(), id);
         if (codeExists) throw new BranchException(BranchException.Type.CODE_EXISTS);
         if (nameExists) throw new BranchException(BranchException.Type.NAME_EXISTS);
     }
@@ -77,9 +71,7 @@ public class BranchService {
         notificationService.record(operation, details);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
-            public void afterCommit() {
-                emailNotificationService.sendNotification(operation, details);
-            }
+            public void afterCommit() {emailNotificationService.sendNotification(operation, details);}
         });
     }
 
@@ -104,9 +96,7 @@ public class BranchService {
         return requests.stream().map(this::saveOne).toList();
     }
 
-    public Page<BranchResponseDto> getAll(Pageable pageable) {
-        return branchRepository.findAll(pageable).map(this::toResponse);
-    }
+    public Page<BranchResponseDto> getAll(Pageable pageable) {return branchRepository.findAll(pageable).map(this::toResponse);}
 
     @Transactional
     public BranchResponseDto update(BranchRequestDto request) {
@@ -143,11 +133,25 @@ public class BranchService {
     }
 
     public Page<BranchResponseDto> search(BranchSearchRequestDto request, Pageable pageable) {
-        return branchRepository.findAll(BranchSpecification.search(request), pageable)
-                .map(this::toResponse);
+        return branchRepository.findAll(BranchSpecification.search(request), pageable).map(this::toResponse);
     }
 
     public List<BranchHistoryDto> getHistory(Long branchId) {
         return branchHistoryService.getHistory(branchId);
     }
+
+    public BranchAnalyticsDto getAnalytics() {
+        var regions = branchRepository.countByRegion().stream().map(row -> new BranchAnalyticsDto.RegionStats(
+                        (String) row[0], ((Number) row[1]).longValue(), ((Number) row[2]).longValue())).toList();
+        var types = branchRepository.countByBranchType().stream().map(row -> new BranchAnalyticsDto.TypeStats(
+                        (String) row[0], ((Number) row[1]).longValue())).toList();
+        var organizations = branchRepository.countByOrganization().stream().map(row -> new BranchAnalyticsDto.OrganizationStats(
+                        (String) row[0], ((Number) row[1]).longValue())).toList();
+        var days = branchRepository.countByCreationDay().stream().map(row -> new BranchAnalyticsDto.MonthlyStats(
+                        row[0].toString(), ((Number) row[1]).longValue())).toList();
+        Map<String, Long> counts = counts(new BranchSearchRequestDto());
+
+        return new BranchAnalyticsDto( counts.get("total"), counts.get("active"), counts.get("inactive"), regions, types, organizations, days);
+    }
+
 }

@@ -20,6 +20,12 @@ export interface BranchNotification {
     branchName: string | null; message: string; seen: boolean; createdAt: string;
 }
 export interface PageResult<T> { content: T[]; totalElements: number; totalPages: number; number: number }
+export interface BranchAnalytics extends Counts {
+    branchesByRegion: { name: string; active: number; inactive: number }[];
+    branchesByType: { name: string; count: number }[];
+    branchesByOrganization: { name: string; count: number }[];
+    monthlyCreations: { month: string; count: number }[];
+}
 
 export const getDropdownOptions = () => axios.get<DropdownOptions>("branch/dropdown-options");
 
@@ -60,3 +66,6 @@ export const parseApiError = (err: unknown) => {
     };
 };
 export const getErrorMessage = (err: unknown, fallback: string) => parseApiError(err).message ?? fallback;
+
+export const getAnalytics = (signal?: AbortSignal) =>
+    axios.get<BranchAnalytics>("branch/analytics", { signal });
