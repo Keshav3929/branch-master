@@ -1,9 +1,10 @@
-
 package branchmaster.exception;
 
+import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -19,32 +20,37 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BranchException.class)
     public ResponseEntity<?> handle(BranchException e) {
-        if (e.getResult() != null) {
-            return ResponseEntity.unprocessableContent().body(e.getResult());
-        }
+        if (e.getResult() != null) return ResponseEntity.unprocessableContent().body(e.getResult());
         return ResponseEntity.status(e.getStatus()).body(new ApiError(e.getMessage(),
-                        e.getField() == null ? Map.of() : Map.of(e.getField(), e.getMessage())));
+                e.getField() == null ? Map.of() : Map.of(e.getField(), e.getMessage())));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handle(MethodArgumentNotValidException e) {
         Map<String, String> errors = new LinkedHashMap<>();
-        e.getBindingResult().getFieldErrors()
-                .forEach(f -> errors.putIfAbsent(f.getField(), f.getDefaultMessage()));
-        return ResponseEntity.badRequest()
-                .body(new ApiError("Please correct the highlighted fields", errors));
+        e.getBindingResult().getFieldErrors().forEach(f -> errors.putIfAbsent(f.getField(), f.getDefaultMessage()));
+        return ResponseEntity.badRequest().body(new ApiError("Please correct the highlighted fields", errors));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiError> handleUnreadable(HttpMessageNotReadableException e) {
-        return ResponseEntity.badRequest()
-                .body(new ApiError("Malformed request data", Map.of()));
+        return ResponseEntity.badRequest().body(new ApiError("Malformed request data", Map.of()));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> handleDenied(AccessDeniedException e) {
+        return ResponseEntity.status(403).body(new ApiError("You do not have permission to do this", Map.of()));
+    }
+
+    @ExceptionHandler(FeignException.class)
+    public ResponseEntity<ApiError> handleFeign(FeignException e) {
+        log.warn("notification-service call failed: {}", e.getMessage());
+        return ResponseEntity.status(503).body(new ApiError("Notification service is unavailable", Map.of()));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handle(Exception e) {
         log.error("Unhandled error", e);
-        return ResponseEntity.status(500)
-                .body(new ApiError("Internal server error", Map.of()));
+        return ResponseEntity.status(500).body(new ApiError("Internal server error", Map.of()));
     }
 }

@@ -2,18 +2,28 @@ import { useEffect, useState } from "react";
 import {
     AppBar, Toolbar, Box, IconButton, Avatar, Tooltip, Badge,
     Popover, Typography, Button, CircularProgress, Pagination,
-    Divider, Dialog, DialogTitle, DialogContent, DialogActions, Stack
+    Divider, Dialog, DialogTitle, DialogContent, DialogActions, Stack,
+    ListItemIcon, List, ListItemButton, ListItemText, Chip
 } from "@mui/material";
 import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import LogoutIcon from "@mui/icons-material/Logout";
+import SwitchAccountIcon from "@mui/icons-material/SwitchAccount";
 import {
     getNotifications, getUnreadCount,
-    markNotificationSeen, markAllNotificationsSeen
+    markNotificationSeen, markAllNotificationsSeen,
+    getSession, signOut
 } from "../app/branchApi";
 import type { BranchNotification } from "../app/branchApi";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
+import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 
 export default function BranchHeader() {
+    const session = getSession();
+    const isAdmin = session?.role === "ADMIN";
+    const initials = session?.username.slice(0, 2).toUpperCase() ?? "?";
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+    const [profileAnchor, setProfileAnchor] = useState<HTMLElement | null>(null);
     const [unread, setUnread] = useState(0);
     const [notifs, setNotifs] = useState<BranchNotification[]>([]);
     const [page, setPage] = useState(0);
@@ -21,17 +31,31 @@ export default function BranchHeader() {
     const [loading, setLoading] = useState(false);
     const [detail, setDetail] = useState<BranchNotification | null>(null);
 
-    useEffect(() => { getUnreadCount().then(({ data }) => setUnread(data)).catch(() => { }); }, []);
+    const refreshUnreadCount = () => {
+        getUnreadCount()
+            .then(({ data }) => setUnread(data))
+            .catch(() => { });
+    };
+    useEffect(() => {
+        refreshUnreadCount();
+        window.addEventListener("notifications-updated", refreshUnreadCount);
+        return () => { window.removeEventListener("notifications-updated", refreshUnreadCount); };
+    }, []);
     useEffect(() => {
         if (!anchorEl) return;
         let cancelled = false;
-        setLoading(true);
-        getNotifications(page).then(({ data }) => {
+        getNotifications(page)
+            .then(({ data }) => {
                 if (cancelled) return;
                 setNotifs(data.content);
                 setPages(data.totalPages);
-            }).catch(() => { })
-            .finally(() => { if (!cancelled) setLoading(false); });
+            })
+            .catch(error => {
+                if (!cancelled) {
+                    console.error("Failed to load notifications:", error);
+                    setNotifs([]);
+                }
+            }).finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
     }, [anchorEl, page]);
 
@@ -55,6 +79,15 @@ export default function BranchHeader() {
     const closePopover = () => {
         if (!detail) setAnchorEl(null);
     };
+    const toggleBell = (button: HTMLElement) => {
+        const next = anchorEl ? null : button;
+        setPage(0);
+        setAnchorEl(next);
+        if (next) {
+            setLoading(true);
+            refreshUnreadCount();
+        }
+    };
 
     return (
         <>
@@ -65,28 +98,45 @@ export default function BranchHeader() {
                     </Box>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
                         <Tooltip title="Notifications">
-                            <IconButton size="small" className="header-icon-btn" onClick={event => { setPage(0); setAnchorEl(current => current ? null : event.currentTarget); }}>
-                                <Badge badgeContent={unread} color="error" max={99}>
-                                    <NotificationsNoneIcon fontSize="small" />
-                                </Badge>
+                            <IconButton size="small" className="header-icon-btn" onClick={event => toggleBell(event.currentTarget)}>
+                                <Badge badgeContent={unread} color="error" max={99}> <NotificationsNoneIcon fontSize="small" /> </Badge>
                             </IconButton>
                         </Tooltip>
                         <Tooltip title="Profile & Account">
-                            <IconButton size="small" className="header-icon-btn">
-                                <Avatar sx={{ width: 34, height: 34, bgcolor: "#17324d", fontSize: "0.85rem", fontWeight: 700 }}> AC </Avatar>
+                            <IconButton size="small" className="header-icon-btn" onClick={event => setProfileAnchor(event.currentTarget)}>
+                                <Avatar sx={{ width: 34, height: 34, bgcolor: "#17324d", fontSize: "0.85rem", fontWeight: 700 }}>
+                                    {session?.username.slice(0, 2).toUpperCase() ?? "?"}{initials}
+                                </Avatar>
                             </IconButton>
                         </Tooltip>
                     </Box>
                 </Toolbar>
             </AppBar>
-            <Popover
-                open={Boolean(anchorEl)}
-                anchorEl={anchorEl}
-                onClose={closePopover}
-                disableEnforceFocus
-                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-                transformOrigin={{ vertical: "top", horizontal: "right" }}
-            >
+
+            <Popover anchorEl={profileAnchor} open={Boolean(profileAnchor)} onClose={() => setProfileAnchor(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}
+                slotProps={{ paper: { sx: { mt: 1, width: 290, borderRadius: 3, overflow: "hidden", boxShadow: "0 18px 48px rgba(15,23,42,0.22)" } } }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, px: 2.5, py: 2.5, color: "#fff", background: "linear-gradient(135deg, #0f172a 0%, #24496b 100%)" }}>
+                    <Avatar sx={{ width: 56, height: 56, bgcolor: "#fff", color: "#17324d", fontWeight: 800, fontSize: "1.2rem", boxShadow: "0 0 0 3px rgba(255,255,255,0.25)" }}>{initials}</Avatar>
+                    <Box sx={{ minWidth: 0 }}>
+                        <Typography fontWeight={700} noWrap>{session?.username}</Typography>
+                        <Chip size="small" icon={isAdmin ? <AdminPanelSettingsIcon /> : <PersonOutlineIcon />} label={isAdmin ? "Administrator" : "User"}
+                            sx={{ mt: 0.5, height: 24, color: "#fff", bgcolor: "rgba(255,255,255,0.18)", "& .MuiChip-icon": { color: "#fff" } }} />
+                    </Box>
+                </Box>
+                <List sx={{ p: 1 }}>
+                    <ListItemButton onClick={() => signOut(true)} sx={{ borderRadius: 2, py: 1.25 }}>
+                        <ListItemIcon sx={{ minWidth: 40 }}><SwitchAccountIcon fontSize="small" /></ListItemIcon>
+                        <ListItemText primary="Change account" secondary="Sign in as someone else" />
+                    </ListItemButton>
+                    <ListItemButton onClick={() => signOut()} sx={{ borderRadius: 2, py: 1.25, color: "error.main", "&:hover": { bgcolor: "rgba(211,47,47,0.08)" } }}>
+                        <ListItemIcon sx={{ minWidth: 40 }}><LogoutIcon fontSize="small" color="error" /></ListItemIcon>
+                        <ListItemText primary="Logout" />
+                    </ListItemButton>
+                </List>
+            </Popover>
+
+            <Popover open={Boolean(anchorEl)} anchorEl={anchorEl} onClose={closePopover} disableEnforceFocus anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
                 <Box sx={{ width: 380, maxWidth: "95vw" }}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, px: 1, py: 1 }}>
                         <Tooltip title="Close notifications">

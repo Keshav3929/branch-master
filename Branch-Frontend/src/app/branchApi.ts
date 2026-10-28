@@ -69,3 +69,40 @@ export const getErrorMessage = (err: unknown, fallback: string) => parseApiError
 
 export const getAnalytics = (signal?: AbortSignal) =>
     axios.get<BranchAnalytics>("branch/analytics", { signal });
+
+//---------------------------------------------------//
+
+export interface Session { token: string; username: string; role: "ADMIN" | "USER" }
+const SESSION_KEYS = ["token", "username", "role"] as const;
+const notifyAuthChanged = () => window.dispatchEvent(new Event("branch-auth-changed"));
+
+export const getSession = (): Session | null => {
+    const [token, username, role] = SESSION_KEYS.map(k => sessionStorage.getItem(k));
+    return token && username && (role === "ADMIN" || role === "USER") ? { token, username, role } : null;
+};
+export const saveSession = (s: Session) => {
+    SESSION_KEYS.forEach(k => sessionStorage.setItem(k, s[k]));
+    sessionStorage.removeItem("switching");
+    notifyAuthChanged();
+};
+// switching = true is "Change account": same as logout, but the login page says so.
+export const signOut = (switching = false) => {
+    SESSION_KEYS.forEach(k => sessionStorage.removeItem(k));
+    if (switching) sessionStorage.setItem("switching", "1");
+    notifyAuthChanged();
+};
+
+// Every request carries the token. An expired or invalid token (401) logs the user out.
+axios.interceptors.request.use(config => {
+    const token = sessionStorage.getItem("token");
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+});
+axios.interceptors.response.use(response => response, error => {
+    if (isAxiosError(error) && error.response?.status === 401 && !error.config?.url?.startsWith("auth/")) signOut();
+    return Promise.reject(error);
+});
+
+type Credentials = { username: string; password: string };
+export const login = (body: Credentials) => axios.post<Session>("auth/login", body);
+export const register = (body: Credentials) => axios.post<Session>("auth/register", body);

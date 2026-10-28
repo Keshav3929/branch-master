@@ -56,8 +56,7 @@ public class BranchExcelService {
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=branch-template.xlsx")
-                    .contentType(MediaType.parseMediaType(
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .contentType(MediaType.parseMediaType( "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                     .body(output.toByteArray());
         }
     }
@@ -87,22 +86,25 @@ public class BranchExcelService {
         return new BranchImportRowValidationDto(valid, invalid);
     }
 
-    private void checkDuplicates(BranchRequestDto r, Set<String> codes, Set<String> names, List<String> errors) {
+    private void checkDuplicates(
+            BranchRequestDto r, Set<String> codes, Set<String> names,
+            List<String> errors) {
+
         String code = r.getBranchCode() == null ? "" : r.getBranchCode().trim();
         String name = r.getBranchName() == null ? "" : r.getBranchName().trim();
         Long org = r.getOrganizationId();
-
+        Long id = r.getId();
         if (!code.isEmpty()) {
             if (!codes.add(code.toLowerCase(Locale.ROOT)))
                 errors.add("branchCode: Duplicate Branch Code in uploaded file");
-            if (branchRepository.existsByBranchCode(code))
-                errors.add("branchCode: Branch Code already exists");
+            if (branchRepository.existsByBranchCodeAndIdNot(code, id))
+                errors.add("branchCode: " + BranchException.Type.CODE_EXISTS.getMessage());
         }
         if (!name.isEmpty() && org != null) {
             if (!names.add(org + "|" + name.toLowerCase(Locale.ROOT)))
                 errors.add("branchName: Duplicate Branch Name within the same Organization");
-            if (branchRepository.existsByBranchNameAndOrganizationId(name, org))
-                errors.add("branchName: Branch Name already exists in this Organization");
+            if (branchRepository.existsByBranchNameAndOrganizationIdAndIdNot(name, org, id))
+                errors.add("branchName: " + BranchException.Type.NAME_EXISTS.getMessage());
         }
     }
 }

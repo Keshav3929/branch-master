@@ -29,7 +29,7 @@ import { showSuccess, showError } from "../../components/SweetAlert";
 import { useDispatch, useSelector } from "react-redux";
 import type { RootState, AppDispatch } from "../../redux/store";
 import { fetchBranches, setBranchLocally, removeBranchLocally } from "../../redux/branchSlice";
-import { deleteBranch, getCounts, saveBranches, getBranchTemplate, getDropdownOptions, getErrorMessage, } from "../branchApi";
+import { deleteBranch, getSession, getCounts, saveBranches, getBranchTemplate, getDropdownOptions, getErrorMessage, } from "../branchApi";
 import type { Counts, DropdownOptions } from "../branchApi";
 import { parseIdList } from "../branchUtils";
 import type { Branch } from "../../types/BranchSchema";
@@ -37,7 +37,7 @@ import BranchHeader from "../../components/Header";
 
 type Tile = "total" | "active" | "inactive";
 type Scope = "all" | "date";
-type ModeState = { filters: BranchFilters; applied: BranchFilters };
+type ModeState = { filters: BranchFilters; applied: BranchFilters; datesApplied: boolean; };
 type ExcelRow = Record<string, unknown>;
 type ImportRow = { row: number; data: ExcelRow; errors: string[] };
 type OptionFields = Record<string, DropdownOptions["organizations"]>;
@@ -46,14 +46,10 @@ const PAGE_SIZE = 10;
 const emptyOptions: DropdownOptions = { organizations: [], branchTypes: [], regions: [], countries: [], states: [], cities: [], contactPersons: [], workingHours: [] };
 const headProps = { sx: { backgroundColor: "#17324d", color: "#fff", textAlign: "center", "& .Mui-TableHeadCell-Content": { justifyContent: "center" }, "& .MuiTableSortLabel-root, & .MuiTableSortLabel-icon": { color: "#fff !important" } } };
 const bodyProps = { sx: { textAlign: "center", whiteSpace: "normal", wordBreak: "break-word" } };
-const defaults = (scope: Scope, forApply = false): BranchFilters => {
-    const withDates = !forApply || scope === "date";
-    return {
-        search: "", branchType: [], organizationId: [], regionId: [], countryId: [], status: ["Active"],
-        createdDateFrom: withDates ? dayjs().subtract(7, "day").format(DATE_FMT) : "",
-        createdDateTo: withDates ? dayjs().format(DATE_FMT) : ""
-    };
-};
+const defaults = (forApply = false): BranchFilters => ({
+    search: "", branchType: [], organizationId: [], regionId: [], countryId: [], status: ["Active"],
+    createdDateFrom: dayjs().subtract(7, "day").format(DATE_FMT), createdDateTo: dayjs().format(DATE_FMT)
+});
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const StatusPill = ({ active }: { active: boolean }) => (
     <span className={`status-pill ${active ? "active" : "inactive"}`}> {active ? <CheckCircleIcon sx={{ fontSize: 16 }} /> : <CancelIcon sx={{ fontSize: 16 }} />}{active ? "Active" : "Inactive"} </span>
@@ -104,6 +100,7 @@ const mandatoryHeaders = new Set(["Branch Code", "Branch Name", "Organization", 
 
 export default function BranchManagement() {
     const dispatch = useDispatch<AppDispatch>();
+    const isAdmin = getSession()?.role === "ADMIN";
     const { branches, totalElements, loading, error } = useSelector((state: RootState) => state.branch);
     const excelInputRef = useRef<HTMLInputElement>(null);
     const dropdownRequest = useRef<Promise<DropdownOptions> | undefined>(undefined);
@@ -113,11 +110,17 @@ export default function BranchManagement() {
     const [counts, setCounts] = useState<Counts>({ total: 0, active: 0, inactive: 0 });
     const [countsVersion, setCountsVersion] = useState(0);
     const [scope, setScope] = useState<Scope>("all");
-    const [modes, setModes] = useState<Record<Scope, ModeState>>(() => ({ all: { filters: defaults("all"), applied: defaults("all", true) }, date: { filters: defaults("date"), applied: defaults("date", true) } }));
+    const [modes, setModes] = useState<Record<Scope, ModeState>>(() => {
+        const all = defaults();
+        const date = defaults();
+        return {
+            all: { filters: all, applied: { ...all, createdDateFrom: "", createdDateTo: "" }, datesApplied: false },
+            date: { filters: date, applied: date, datesApplied: true }
+        };
+    });
     const { filters, applied } = modes[scope];
     const patchMode = (patch: Partial<ModeState>) => setModes(m => ({ ...m, [scope]: { ...m[scope], ...patch } }));
-    const setFilters: Dispatch<SetStateAction<BranchFilters>> = next =>
-        setModes(m => ({ ...m, [scope]: { ...m[scope], filters: typeof next === "function" ? next(m[scope].filters) : next } }));
+    const setFilters: Dispatch<SetStateAction<BranchFilters>> = next => setModes(m => ({ ...m, [scope]: { ...m[scope], filters: typeof next === "function" ? next(m[scope].filters) : next } }));
     const [showMoreFilters, setShowMoreFilters] = useState(false);
     const [addOpen, setAddOpen] = useState(false);
     const [editBranch, setEditBranch] = useState<Branch | null>(null);
@@ -137,7 +140,6 @@ export default function BranchManagement() {
     const resetPage = () => setPagination(p => p.pageIndex ? { ...p, pageIndex: 0 } : p);
     const statusFilter = applied.status.length === 1 ? applied.status[0] === "Active" : undefined;
     const selectedTile: Tile = statusFilter === undefined ? "total" : statusFilter ? "active" : "inactive";
-
     const ensureDropdownOptions = useCallback((): Promise<DropdownOptions> => {
         dropdownRequest.current ??= getDropdownOptions()
             .then(({ data }) => { setOptionsData(data); return data; })
@@ -146,8 +148,11 @@ export default function BranchManagement() {
     }, []);
     useEffect(() => { ensureDropdownOptions().catch(() => showError("Error!", "Failed to load dropdown options.")); }, [ensureDropdownOptions]);
 
-    const { createdDateFrom: from, createdDateTo: to } = applied;
-    const dateRange = useMemo(() => ({ createdDateFrom: from || undefined, createdDateTo: to || undefined }), [from, to]);
+    const dateRange = useMemo(() => {
+        const applyDates = scope === "date" || modes[scope].datesApplied;
+        return applyDates ? { createdDateFrom: applied.createdDateFrom || undefined, createdDateTo: applied.createdDateTo || undefined } : {};
+    }, [scope, applied.createdDateFrom, applied.createdDateTo, modes[scope].datesApplied]
+    );
     const query = useMemo(() => ({
         filters: { search: applied.search.trim() || undefined, organizationId: applied.organizationId, regionId: applied.regionId, countryId: applied.countryId, branchType: applied.branchType, status: statusFilter, ...dateRange },
         page: { page: pagination.pageIndex, size: pagination.pageSize, sort: sorting[0] ? `${sorting[0].id},${sorting[0].desc ? "desc" : "asc"}` : undefined }
@@ -157,44 +162,32 @@ export default function BranchManagement() {
         request.unwrap().catch(e => { if (e?.name !== "AbortError") void showError("Error!", "Failed to load branches."); });
         return () => request.abort();
     }, [dispatch, query]);
-
     useEffect(() => {
         const controller = new AbortController();
-        getCounts({}, controller.signal)
-            .then(({ data }) => setCounts(data))
-            .catch(() => { });
+        getCounts(dateRange, controller.signal).then(({ data }) => setCounts(data)).catch(() => { });
         return () => controller.abort();
-    }, [countsVersion]);
-    const afterChange = () => setCountsVersion(version => version + 1);
-    const handleSaveSuccess = (saved: Branch[]) => {
-        saved.filter(b => statusFilter === undefined || b.status === statusFilter).forEach(b => dispatch(setBranchLocally(b)));
-        afterChange();
-    };
-    const handleUpdateSuccess = (branch: Branch) => {
-        dispatch(statusFilter !== undefined && branch.status !== statusFilter ? removeBranchLocally(branch.id) : setBranchLocally(branch));
-        afterChange();
-    };
-    const handleApplyFilters = (next: BranchFilters = filters) => {
-        if (same(next, applied)) return;
-        patchMode({ applied: { ...next } });
+    }, [scope, dateRange, countsVersion]);
+    const afterChange = () => { setCountsVersion(version => version + 1);
+        window.dispatchEvent(new Event("notifications-updated"));
+    }; 
+    const handleSaveSuccess = (saved: Branch[]) => { saved.filter(b => statusFilter === undefined || b.status === statusFilter).forEach(b => dispatch(setBranchLocally(b))); afterChange(); };
+    const handleUpdateSuccess = (branch: Branch) => { dispatch(statusFilter !== undefined && branch.status !== statusFilter ? removeBranchLocally(branch.id) : setBranchLocally(branch)); afterChange(); };
+    const handleApplyFilters = () => {
+        if (same(filters, applied) && modes[scope].datesApplied) return;
+        patchMode({ applied: { ...filters }, datesApplied: true });
         resetPage();
     };
     const handleResetFilters = () => {
-        const f = defaults(scope), a = defaults(scope, true);
-        if (same(filters, f) && same(applied, a)) return;
-        patchMode({ filters: f, ...(same(applied, a) ? {} : { applied: a }) });
+        const f = defaults();
+        const a = { ...f };
+        if (scope === "all") { a.createdDateFrom = ""; a.createdDateTo = ""; }
+        patchMode({ filters: f, applied: a, datesApplied: scope === "date" });
         resetPage();
     };
-    const switchScope = (next: Scope) => {
-        if (next === scope) return;
-        if (next === "date") setModes(m => ({ ...m, date: { ...m.date, applied: m.date.filters } }));
-        setScope(next);
-        resetPage();
-    };
+    const switchScope = (next: Scope) => { if (next === scope) return; setScope(next); resetPage(); };
     const pickStatus = (id: Tile) => {
         const status = id === "total" ? [] : [id === "active" ? "Active" : "Inactive"];
-        if (same(status, applied.status)) return;
-        patchMode({ filters: { ...filters, status }, applied: { ...applied, status } });
+        patchMode({ filters: { ...filters, status }, ...(same(status, applied.status) ? {} : { applied: { ...applied, status } }) });
         resetPage();
     };
     const closeView = () => setViewBranch(null);
@@ -341,15 +334,7 @@ export default function BranchManagement() {
             formatBranchWorkbook(workbook);
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const headers = utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "" })[1];
-            const demo: Record<string, unknown> = {
-                "Branch Code": "BR0030", "Branch Name": "Delhi Central Branch", "Communication Name": "Delhi 17",
-                "Organization": "Organization 1", "Branch Type": "Hospital", "Working Hours": "Morning Shift",
-                "Region": "North", "Country": "India", "State": "Delhi", "City": "Delhi", "Area": "Connaught Place",
-                "Zip Code": "110001", "Latitude": 28.6328, "Longitude": 77.2197, "Address Line 1": "12 Parliament Street", "Address Line 2": "Near Metro Station",
-                "Contact Person": "Rahul Sharma", "Mobile Number": "9876543210", "Telephone": "0114567890", "Email ID": "rahul.sharma@example.com",
-                "Working Days": "Monday,Tuesday,Wednesday,Thursday,Friday", "Departments": "HR", "Services": "Emergency",
-                "Status": "Active", "Branch Logo": "", "Supporting Documents": "", "Remarks": "Test branch - Organization 1, North, India, Delhi"
-            };
+            const demo: Record<string, unknown> = { "Branch Code": "BR0030", "Branch Name": "Delhi Central Branch", "Communication Name": "Delhi 17", "Organization": "Organization 1", "Branch Type": "Hospital", "Working Hours": "Morning Shift", "Region": "North", "Country": "India", "State": "Delhi", "City": "Delhi", "Area": "Connaught Place", "Zip Code": "110001", "Latitude": 28.6328, "Longitude": 77.2197, "Address Line 1": "12 Parliament Street", "Address Line 2": "Near Metro Station", "Contact Person": "Rahul Sharma", "Mobile Number": "9876543210", "Telephone": "0114567890", "Email ID": "rahul.sharma@example.com", "Working Days": "Monday,Tuesday,Wednesday,Thursday,Friday", "Departments": "HR", "Services": "Emergency", "Status": "Active", "Branch Logo": "", "Supporting Documents": "", "Remarks": "Test branch - Organization 1, North, India, Delhi" };
             const demoRow = headers.map(header => {
                 const key = normalizeHeader(String(header).replace(/\*$/, ""));
                 const match = Object.entries(demo).find(([label]) => normalizeHeader(label) === key);
@@ -405,8 +390,8 @@ export default function BranchManagement() {
     const rowActions = (branch: Branch) => {
         const actions: { title: string; color: "info" | "primary" | "error"; icon: ReactNode; run: () => void }[] = [
             { title: "View History", color: "info", icon: <VisibilityIcon fontSize="small" />, run: () => void handleView(branch) },
-            { title: "Edit Branch", color: "primary", icon: <EditIcon fontSize="small" />, run: () => void handleEdit(branch) },
-            ...(branch.status ? [{ title: "Delete Branch", color: "error" as const, icon: <DeleteIcon fontSize="small" />, run: () => setDeleteId(branch.id) }] : [])
+            ...(isAdmin ? [{ title: "Edit Branch", color: "primary" as const, icon: <EditIcon fontSize="small" />, run: () => void handleEdit(branch) }] : []),
+            ...(isAdmin && branch.status ? [{ title: "Delete Branch", color: "error" as const, icon: <DeleteIcon fontSize="small" />, run: () => setDeleteId(branch.id) }] : [])
         ];
         return (
             <Stack direction="row" spacing={0.5}>
@@ -472,17 +457,17 @@ export default function BranchManagement() {
             />
             <input ref={excelInputRef} hidden multiple type="file" accept=".pdf,.docx,.xlsx" onChange={event => { void handleFileSelection(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
             <SpeedDial ariaLabel="Branch actions" icon={<ListIcon />} open={dialOpen} onOpen={() => setDialOpen(true)} onClose={() => setDialOpen(false)} sx={{ position: "fixed", right: 30, bottom: 80, zIndex: 1200 }} >
-                <SpeedDialAction icon={<AddIcon />} tooltipTitle="Add New Branch" slotProps={{ fab: { sx: { bgcolor: "#2529fc", color: "#fff", "&:hover": { bgcolor: "#3930b8" } } } }}
+                {isAdmin && <SpeedDialAction icon={<AddIcon />} tooltipTitle="Add New Branch" slotProps={{ fab: { sx: { bgcolor: "#2529fc", color: "#fff", "&:hover": { bgcolor: "#3930b8" } } } }}
                     onClick={() => {
                         setDialOpen(false);
                         void ensureDropdownOptions().then(() => setAddOpen(true)).catch(() => showError("Error!", "Failed to load dropdown options."));
-                    }} />
+                    }} />}
                 <SpeedDialAction icon={<DownloadIcon />} tooltipTitle="Download Excel" slotProps={{ fab: { sx: { bgcolor: "#434e67", color: "#fff", "&:hover": { bgcolor: "#7f8cac" } } } }}
                     onClick={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setDialOpen(false); setExcelMenu({ top: r.top, left: r.left }); }}
                 />
-                <SpeedDialAction icon={<UploadFileIcon />} tooltipTitle="Upload Excel" slotProps={{ fab: { sx: { bgcolor: "#c107b2", color: "#fff", "&:hover": { bgcolor: "#983f91" } } } }}
+                {isAdmin && <SpeedDialAction icon={<UploadFileIcon />} tooltipTitle="Upload Excel" slotProps={{ fab: { sx: { bgcolor: "#c107b2", color: "#fff", "&:hover": { bgcolor: "#983f91" } } } }}
                     onClick={() => { setDialOpen(false); excelInputRef.current?.click(); }}
-                />
+                />}
             </SpeedDial>
             <Menu open={!!excelMenu} onClose={() => setExcelMenu(null)} anchorReference="anchorPosition" anchorPosition={excelMenu ?? undefined}>
                 <MenuItem onClick={() => { void downloadTemplate(); setExcelMenu(null); }}> Download Template </MenuItem>
@@ -561,8 +546,7 @@ export default function BranchManagement() {
                                     const fields = errorFields(item);
                                     return (
                                         <TableRow key={item.row}><TableCell>{item.row}</TableCell>
-                                            {excelCols.map(([, key]) => (
-                                                <TableCell key={key} sx={fields.has(key) ? { bgcolor: "#ffebee", color: "#b71c1c", fontWeight: 700, border: "1px solid #ef9a9a" } : undefined}> {excelValue(key, item.data[key], optionFields)} </TableCell>))}
+                                            {excelCols.map(([, key]) => (<TableCell key={key} sx={fields.has(key) ? { bgcolor: "#ffebee", color: "#b71c1c", fontWeight: 700, border: "1px solid #ef9a9a" } : undefined}> {excelValue(key, item.data[key], optionFields)} </TableCell>))}
                                             <TableCell sx={{ color: "#b71c1c", minWidth: 260 }}> {item.errors.map(error => error.slice(error.indexOf(":") + 1).trim()).join(", ")} </TableCell>
                                         </TableRow>
                                     );

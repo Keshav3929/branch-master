@@ -1,6 +1,11 @@
 spring:
   application:
     name: BranchMaster
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  config:
+    import: optional:file:.env[.properties]
   datasource:
     url: jdbc:mysql://localhost:3306/branch_master
     username: ${DB_USERNAME:root}
@@ -27,10 +32,22 @@ spring:
     web:
       pageable:
         max-page-size: 100000
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 2000
+            read-timeout: 5000
 
 branch:
   notification:
     email: ${BRANCH_NOTIFICATION_EMAIL}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-ms: 3600000
 
 server:
   port: 8081
