@@ -9,7 +9,7 @@ import { yupResolver } from "@hookform/resolvers/yup";
 import Drawer from "../../components/Drawer";
 import { showSuccess, showError } from "../../components/SweetAlert";
 import branchSchema from "../branch-validation";
-import { parseApiError, updateBranch } from "../branchApi";
+import { parseApiError, saveBranches } from "../branchApi";
 import { toPayload, parseIdList, type OptionsData } from "../branchUtils";
 import BranchFormFields from "../../components/BranchForm";
 import type { Branch } from "../../types/BranchSchema";
@@ -57,8 +57,8 @@ export default function UpdateForm({ open, onClose, onSuccess, branch, optionsDa
         }
         clearErrors();
         try {
-            const res = await updateBranch(toPayload(getValues()));
-            onSuccess(res.data);
+            const res = await saveBranches([toPayload(getValues())]);
+            onSuccess(res.data[0]);
             onClose();
             await showSuccess("Success!", "Branch updated successfully.");
         } catch (err: unknown) {

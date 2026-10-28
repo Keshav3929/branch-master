@@ -29,6 +29,7 @@ export interface BranchAnalytics extends Counts {
 
 export const getDropdownOptions = () => axios.get<DropdownOptions>("branch/dropdown-options");
 
+
 export const saveBranches = (branches: object[], validateOnly = false) =>
     axios.post("branch/save-multiple", branches, { params: validateOnly ? { validateOnly } : undefined });
 
@@ -41,8 +42,6 @@ export const getCounts = (params: Pick<BranchSearchRequest, "createdDateFrom" | 
     axios.get<Counts>("branch/counts", { params, signal });
 
 export const getBranchHistory = (id: number) => axios.get(`branch/history/${id}`);
-
-export const updateBranch = (data: object) => axios.put("branch/update", data);
 
 export const deleteBranch = (id: number) => axios.delete(`branch/delete/${id}`);
 

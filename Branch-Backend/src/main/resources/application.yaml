@@ -51,3 +51,7 @@ app:
 
 server:
   port: 8081
+
+services:
+  dropdown:
+    url: http://localhost:8082
